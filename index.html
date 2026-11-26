@@ -77,6 +77,27 @@
   text-align:right;font-variant-numeric:tabular-nums}
 .mfig small{display:block;font-size:10.5px;font-weight:400;color:var(--ink4);
   margin-top:1px;white-space:nowrap}
+/* ── component small multiples ── */
+.cstrip-grid{display:flex;flex-direction:column;gap:4px;margin-top:8px}
+.cstrip{display:grid;grid-template-columns:minmax(150px,330px) auto 94px;
+  gap:22px;align-items:center;justify-content:start;padding:8px 0;
+  border-top:1px solid var(--border)}
+.cstrip:first-child{border-top:none}
+.cstrip-n{font-family:var(--body);font-size:12.5px;color:var(--ink2);line-height:1.35}
+.cstrip-v{font-family:var(--body);font-size:14px;font-weight:600;color:var(--ink);
+  white-space:nowrap;font-variant-numeric:tabular-nums;text-align:right}
+.cstrip-v span{font-size:11px;font-weight:500;margin-left:6px}
+.cstrip-v i{font-size:11px;margin-right:1px}
+.cstrip-b{display:flex;align-items:flex-end;gap:5px}
+.cb{width:22px;text-align:center}
+.cb .cbw{height:42px;display:flex;align-items:flex-end}
+.cb i{display:block;width:100%;min-height:2px;background:var(--viz-dim);
+  border-radius:3px 3px 0 0}
+.cb.sel i{background:var(--viz-accent)}
+.cb u{display:block;font-size:9.5px;text-decoration:none;color:var(--ink4);
+  margin-top:4px;line-height:1}
+.cb.sel u{color:var(--ink2);font-weight:600}
+
 .chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));
   gap:14px;margin-bottom:1.5rem;align-items:start}
 .chart-grid .chart-card{margin-bottom:0}
@@ -98,6 +119,7 @@
 .segbar span:only-child{border-radius:4px}
 
 /* ── KPI sparkline ── */
+.lrn-empty{color:var(--ink4);font-style:italic}
 .kpi-spark{margin-top:9px;padding-top:9px;border-top:1px solid var(--border)}
 .spark{display:flex;align-items:flex-end;gap:7px}
 .sb{width:22px;text-align:center}
@@ -919,6 +941,13 @@ html[data-mode="view"] .view-welcome{
     </div>
   </div>
 
+  <!-- ── COMPONENT PROGRESS, EVERY QUARTER ── -->
+  <div class="chart-card" id="compstrip-card" style="display:none">
+    <div class="chart-h">Component progress, quarter by quarter</div>
+    <div class="chart-sub">Each component on the same 0–100% scale · the selected quarter is highlighted</div>
+    <div class="cstrip-grid" id="compstrip"></div>
+  </div>
+
   <!-- ── PORTFOLIO TREND ── -->
   <div class="chart-card" id="trend-card" style="display:none">
     <div class="chart-h">Delivery progress by quarter</div>
@@ -1423,8 +1452,14 @@ function renderQuarterBar(){
   if(!S.periods.length){ bar.innerHTML = ''; return; }
   var withData = {};
   qWithData().forEach(function(p){ withData[p.q] = true; });
+  /* Show the reported quarters plus the next one. Later quarters stay in the
+     Periods sheet and appear as the programme reaches them. */
+  var lastShown = 0;
+  S.periods.forEach(function(p,n){ if(withData[p.q] || p.status === 'Current') lastShown = n; });
+  var shown = S.periods.slice(0, Math.min(S.periods.length, lastShown + 2));
+
   bar.innerHTML = '<span class="qbar-lbl">Reporting period</span>' +
-    S.periods.map(function(p){
+    shown.map(function(p){
       var st  = Q_STATUS[p.status] || Q_STATUS['Upcoming'];
       var has = !!withData[p.q];
       return '<button class="qtab'+(p.q===Q?' on':'')+'"'+(has?'':' disabled')+
@@ -1569,6 +1604,50 @@ function renderComponentChart(){
     }).join('') + '</div>';
   if(sub) sub.textContent = 'Mean completion of the activities in each component · ' +
                             rows.length + ' activities in this quarter';
+  renderComponentStrip(order, groups);
+}
+
+/* Every component, every reported quarter — so movement is visible without
+   clicking through the quarter tabs. One mini column chart per component,
+   all on the same 0-100 scale so the rows compare directly. */
+function renderComponentStrip(order, groupsNow){
+  var wrap = document.getElementById('compstrip');
+  var card = document.getElementById('compstrip-card');
+  if(!wrap || !card) return;
+  var qs = qWithData();
+  if(qs.length < 2 || !order.length){ card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  wrap.innerHTML = order.map(function(g){
+    var series = qs.map(function(p){
+      var list = S.activities.filter(function(a){
+        return a.q === p.q && componentOf(a) === g;
+      });
+      var mean = list.length
+        ? Math.round(list.reduce(function(t,a){ return t+(a.pct||0); },0)/list.length) : 0;
+      return {label:p.q, v:mean, sel:p.q === Q};
+    });
+    var now  = series.filter(function(d){ return d.sel; })[0];
+    var prev = null;
+    for(var i=0;i<series.length;i++){ if(series[i].sel) break; prev = series[i]; }
+    var delta = (now && prev) ? now.v - prev.v : null;
+    var dHtml = '';
+    if(delta !== null){
+      var cls = delta > 0 ? 'd-up' : (delta < 0 ? 'd-down' : 'd-flat');
+      var ic  = delta > 0 ? 'ti-arrow-up' : (delta < 0 ? 'ti-arrow-down' : 'ti-minus');
+      dHtml = '<span class="'+cls+'"><i class="ti '+ic+'"></i>'+
+              (delta>0?'+':'')+delta+'</span>';
+    }
+    return '<div class="cstrip">' +
+      '<span class="cstrip-n">'+esc(g)+'</span>' +
+      '<span class="cstrip-b">' + series.map(function(d){
+        return '<span class="cb'+(d.sel?' sel':'')+'" title="'+esc(g)+' \u2014 '+esc(d.label)+
+               ': '+d.v+'%"><span class="cbw"><i style="height:'+
+               Math.max(2, d.v*0.42).toFixed(1)+'px"></i></span><u>'+esc(d.label)+'</u></span>';
+      }).join('') + '</span>' +
+      '<span class="cstrip-v">'+(now?now.v:0)+'%'+dHtml+'</span>' +
+    '</div>';
+  }).join('');
 }
 
 /* ─── PORTFOLIO TREND ────────────────────────────────────── */
@@ -2034,14 +2113,23 @@ function renderRisks(){
 
 /* ─── LEARNING (per quarter) ─────────────────────────────── */
 var LEARN_MAP = {'Key Learning':'learn-1','Action Required':'learn-2','Data Quality Notes':'learn-3'};
+var LEARN_EMPTY = {
+  'Key Learning':      'No key learning recorded for this period.',
+  'Action Required':   'No action items recorded for this period.',
+  'Data Quality Notes':'No data quality notes recorded for this period.'
+};
 function renderLearning(){
-  if(!S.learning.length) return;
   var rows = inQ(S.learning);
+  var viewing = document.documentElement.getAttribute('data-mode') === 'view';
   Object.keys(LEARN_MAP).forEach(function(field){
     var el = document.getElementById(LEARN_MAP[field]);
     if(!el) return;
     var hit = rows.filter(function(r){ return r.field === field; })[0];
-    el.textContent = hit ? hit.text : '';
+    if(hit && hit.text){ el.textContent = hit.text; el.classList.remove('lrn-empty'); return; }
+    /* Nothing for this quarter: viewers get a statement, editors the prompt. */
+    el.textContent = viewing ? (LEARN_EMPTY[field] || '')
+                             : (el.getAttribute('data-placeholder') || '');
+    el.classList.add('lrn-empty');
   });
 }
 
@@ -2274,6 +2362,7 @@ function applyWorkbook(buffer, isAuto){
         return XLSX.utils.sheet_to_json(wb.Sheets[name], {header:1, defval:''});
       }
       function str(v){ return String(v == null ? '' : v).trim(); }
+      function blank(v){ return v === '' || v === null || v === undefined; }
       function num(v){ var n = parseFloat(v); return isNaN(n) ? 0 : n; }
       function date(v){
         var d = null;
@@ -2281,8 +2370,7 @@ function applyWorkbook(buffer, isAuto){
         else { var t = str(v); if(!t) return null; d = new Date(t); }
         if(!d || isNaN(d.getTime())) return null;
         /* SheetJS can land a serial date a few seconds either side of
-           midnight; snap to the nearest whole local day so a 28 Feb
-           target never displays as 27 Feb. */
+           midnight; snap to the nearest whole local day. */
         var snap = new Date(d.getTime());
         snap.setHours(0,0,0,0);
         if(d.getTime() - snap.getTime() > 43200000) snap.setDate(snap.getDate()+1);
@@ -2296,142 +2384,226 @@ function applyWorkbook(buffer, isAuto){
         return fallback;
       }
 
-      /* Reject the pre-quarter layout rather than misreading it: in the old
-         template column A held the KPI label, not the quarter key. */
-      var hdr = rowsOf('KPIs');
-      if(hdr && hdr[2] && String(hdr[2][0]||'').trim().toLowerCase() !== 'quarter'){
+      /* Reject the pre-wide layout rather than misreading it. */
+      var kh = rowsOf('KPIs');
+      if(kh && kh[2] && String(kh[2][0]||'').trim().toLowerCase() !== 'kpi'){
         window.__parse = {schema:'legacy', sheets: wb.SheetNames, total:0};
         if(isAuto) return window.__parse;
-        alert('This looks like the older data.xlsx, which has no Quarter column.\n' +
-              'Use the quarter-aware template instead.');
+        alert('This data.xlsx uses an older layout. Use the current template, which has one ' +
+              'column per quarter.');
         return window.__parse;
       }
 
       /* ── Periods ── */
       var rp = rowsOf('Periods');
+      var per = [];
       if(rp){
-        var per = [];
         for(var i=3;i<rp.length;i++){
           var r = rp[i] || [], key = str(r[0]);
           if(!key) continue;
-          per.push({
-            q: key,
-            label: str(r[1]) || key,
-            start: date(r[2]),
-            end:   date(r[3]),
-            status: pick(r[4], ['Completed','Current','Upcoming'], 'Upcoming')
-          });
+          per.push({q:key, label:str(r[1]) || key, start:date(r[2]), end:date(r[3]),
+                    status:pick(r[4], ['Completed','Current','Upcoming'], 'Upcoming')});
         }
-        if(per.length){ S.periods = per; counts.periods = per.length; }
+      }
+      if(!per.length){
+        window.__parse = {schema:'no-periods', sheets: wb.SheetNames, total:0};
+        if(isAuto) return window.__parse;
+        alert('The Periods sheet is missing or empty — it defines the quarters.');
+        return window.__parse;
+      }
+      S.periods = per;
+      counts.periods = per.length;
+
+      var QKEYS = per.map(function(p){ return p.q; });
+      var QIDX  = {};
+      QKEYS.forEach(function(k,n){ QIDX[k] = n; });
+
+      /* Map each quarter key to its column on a sheet, by header text. */
+      function qcols(header){
+        var m = {};
+        for(var c=0;c<header.length;c++){
+          var h = str(header[c]);
+          if(QIDX[h] !== undefined) m[h] = c;
+        }
+        return m;
       }
 
-      /* ── KPIs ── */
-      var rk = rowsOf('KPIs');
-      if(rk){
-        var a = [];
-        for(var i=3;i<rk.length;i++){
-          var r = rk[i] || [];
-          if(!str(r[0]) || !str(r[1])) continue;
-          a.push({id:uid(), q:str(r[0]), label:str(r[1]), value:num(r[2]),
-                  target:num(r[3]), unit:str(r[4]),
-                  color:pick(r[5], ['green','amber','red','blue'], 'green')});
+      /* Highest quarter index that carries any figure anywhere. */
+      var lastIdx = -1;
+      function noteFilled(cells){
+        Object.keys(cells).forEach(function(k){
+          if(QIDX[k] > lastIdx) lastIdx = QIDX[k];
+        });
+      }
+      /* Read one row's quarter cells into {quarter: value}. */
+      function cellsOf(row, cmap, asNumber){
+        var out = {};
+        Object.keys(cmap).forEach(function(k){
+          var v = row[cmap[k]];
+          if(blank(v)) return;
+          if(asNumber){
+            var n = parseFloat(v);
+            if(isNaN(n)) return;
+            out[k] = n;
+          } else {
+            var t = str(v);
+            if(t) out[k] = t;
+          }
+        });
+        return out;
+      }
+      /* Value at quarter n: either the running sum, or the latest entry. */
+      function valueAt(cells, n, addUp){
+        var total = 0, latest = null, any = false;
+        for(var i=0;i<=n;i++){
+          var v = cells[QKEYS[i]];
+          if(v === undefined) continue;
+          any = true; total += v; latest = v;
         }
-        if(a.length){ S.kpis = a; counts.kpis = a.length; }
+        if(!any) return null;
+        return addUp ? total : latest;
       }
 
-      /* ── Outcomes ── */
-      var ro = rowsOf('Outcomes');
-      if(ro){
-        var a = [];
-        for(var i=3;i<ro.length;i++){
-          var r = ro[i] || [];
+      var rawK = rowsOf('KPIs'), rawO = rowsOf('Outcomes'),
+          rawA = rowsOf('Activities'), rawR = rowsOf('Risks'), rawL = rowsOf('Learning');
+
+      /* ── pass 1: read rows, learn how far the data runs ── */
+      var kDefs = [], oDefs = [], aDefs = [], rDefs = [], lDefs = [];
+
+      if(rawK && rawK[2]){
+        var cm = qcols(rawK[2]);
+        for(var i=3;i<rawK.length;i++){
+          var r = rawK[i] || [];
           if(!str(r[0])) continue;
-          if(!str(r[1]) && !str(r[2])) continue;
-          a.push({id:uid(), q:str(r[0]), area:str(r[1]), indicator:str(r[2]),
-                  baseline:num(r[3]), current:num(r[4]), target:num(r[5]), unit:str(r[6]),
-                  status:pick(r[7], ['On Track','Needs Attention','Delayed','Not Started'], 'Not Started')});
+          var cells = cellsOf(r, cm, true);
+          noteFilled(cells);
+          kDefs.push({label:str(r[0]), target:num(r[1]), unit:str(r[2]),
+                      color:pick(r[3], ['green','amber','red','blue'], 'green'),
+                      addUp: pick(r[4], ['Added up','Running total'], 'Added up') === 'Added up',
+                      cells:cells});
         }
-        if(a.length){ S.outcomes = a; counts.outcomes = a.length; }
+      }
+      if(rawO && rawO[2]){
+        var cm = qcols(rawO[2]);
+        for(var i=3;i<rawO.length;i++){
+          var r = rawO[i] || [];
+          if(!str(r[0]) && !str(r[1])) continue;
+          var cells = cellsOf(r, cm, true);
+          noteFilled(cells);
+          oDefs.push({area:str(r[0]), indicator:str(r[1]), baseline:num(r[2]),
+                      target:num(r[3]), unit:str(r[4]),
+                      status:pick(r[5], ['On Track','Needs Attention','Delayed','Not Started'], 'Not Started'),
+                      addUp: pick(r[6], ['Added up','Running total'], 'Added up') === 'Added up',
+                      cells:cells});
+        }
+      }
+      if(rawA && rawA[2]){
+        var cm = qcols(rawA[2]);
+        for(var i=3;i<rawA.length;i++){
+          var r = rawA[i] || [];
+          if(!str(r[0])) continue;
+          var cells = cellsOf(r, cm, true);
+          noteFilled(cells);
+          aDefs.push({name:str(r[0]), component:str(r[1]), location:str(r[2]),
+                      lead:str(r[3]), due:date(r[4]), cells:cells});
+        }
+      }
+      if(rawR){
+        for(var i=3;i<rawR.length;i++){
+          var r = rawR[i] || [];
+          if(!str(r[0])) continue;
+          var op = str(r[4]), cl = str(r[5]);
+          var oi = QIDX[op] === undefined ? 0 : QIDX[op];
+          var ci = QIDX[cl] === undefined ? -1 : QIDX[cl];
+          if(oi > lastIdx) lastIdx = oi;
+          rDefs.push({risk:str(r[0]), mitigation:str(r[1]),
+                      level:pick(r[2], ['High','Medium','Low'], 'Medium'),
+                      responsible:str(r[3]), openIdx:oi, closeIdx:ci});
+        }
+      }
+      if(rawL && rawL[2]){
+        var cm = qcols(rawL[2]);
+        for(var i=3;i<rawL.length;i++){
+          var r = rawL[i] || [];
+          if(!str(r[0])) continue;
+          var cells = cellsOf(r, cm, false);
+          noteFilled(cells);
+          lDefs.push({field:pick(r[0], ['Key Learning','Action Required','Data Quality Notes'],
+                                 str(r[0])), cells:cells});
+        }
       }
 
-      /* ── Activities ── */
-      var ra = rowsOf('Activities');
-      if(ra){
-        var a = [];
-        for(var i=3;i<ra.length;i++){
-          var r = ra[i] || [];
-          if(!str(r[0]) || !str(r[1])) continue;
-          a.push({id:uid(), q:str(r[0]), name:str(r[1]), location:str(r[2]), lead:str(r[3]),
-                  pct:Math.min(100, Math.max(0, num(r[4]))), due:date(r[5]),
-                  status:pick(r[6], ['Not Started','In Progress','Completed','Delayed'], 'In Progress'),
-                  component:str(r[7])});
-        }
-        if(a.length){ S.activities = a; counts.activities = a.length; }
-      }
+      /* Report through the Current quarter even before its figures are typed,
+         so it opens showing the position carried forward. */
+      var curIdx = -1;
+      per.forEach(function(p,n){ if(p.status === 'Current') curIdx = n; });
+      var endIdx = Math.max(lastIdx, curIdx);
+      if(endIdx < 0) endIdx = 0;
+      var span = QKEYS.slice(0, endIdx+1);
 
-      /* ── Risks ── */
-      var rr = rowsOf('Risks');
-      if(rr){
-        var a = [];
-        for(var i=3;i<rr.length;i++){
-          var r = rr[i] || [];
-          if(!str(r[0]) || !str(r[1])) continue;
-          a.push({id:uid(), q:str(r[0]), risk:str(r[1]), mitigation:str(r[2]),
-                  level:pick(r[3], ['High','Medium','Low'], 'Medium'),
-                  responsible:str(r[4]),
-                  status:pick(r[5], ['Open','Closed'], 'Open')});
-        }
-        if(a.length){ S.risks = a; counts.risks = a.length; }
-      }
+      /* ── pass 2: expand into one row per quarter ── */
+      S.kpis = []; S.outcomes = []; S.activities = []; S.risks = []; S.learning = [];
 
-      /* ── Learning ── */
-      var rl = rowsOf('Learning');
-      if(rl){
-        var a = [];
-        for(var i=3;i<rl.length;i++){
-          var r = rl[i] || [];
-          if(!str(r[0]) || !str(r[1])) continue;
-          a.push({q:str(r[0]),
-                  field:pick(r[1], ['Key Learning','Action Required','Data Quality Notes'], 'Key Learning'),
-                  text:str(r[2])});
-        }
-        if(a.length){ S.learning = a; counts.learning = a.length; }
-      }
-
-      /* Fall back to quarters discovered in the data if Periods is absent */
-      if(!S.periods.length){
-        var seen = {}, order = [];
-        S.kpis.concat(S.outcomes, S.activities, S.risks).forEach(function(r){
-          if(r.q && !seen[r.q]){ seen[r.q] = 1; order.push(r.q); }
+      span.forEach(function(qk, n){
+        kDefs.forEach(function(d){
+          var v = valueAt(d.cells, n, d.addUp);
+          S.kpis.push({id:uid(), q:qk, label:d.label, value: v === null ? 0 : v,
+                       target:d.target, unit:d.unit, color:d.color});
         });
-        S.periods = order.map(function(k, idx){
-          return {q:k, label:k, start:null, end:null,
-                  status: idx === order.length-1 ? 'Current' : 'Completed'};
+        oDefs.forEach(function(d){
+          var v = valueAt(d.cells, n, d.addUp);
+          S.outcomes.push({id:uid(), q:qk, area:d.area, indicator:d.indicator,
+                           baseline:d.baseline, current: v === null ? 0 : v,
+                           target:d.target, unit:d.unit, status:d.status});
         });
-      }
+        aDefs.forEach(function(d){
+          var v = valueAt(d.cells, n, false);          /* progress always carries forward */
+          var pctv = v === null ? 0 : Math.min(100, Math.max(0, v));
+          var st;
+          if(pctv >= 100) st = 'Completed';
+          else if(pctv <= 0) st = 'Not Started';
+          else st = 'In Progress';
+          if(st !== 'Completed' && d.due && per[n].end && d.due < per[n].end) st = 'Delayed';
+          S.activities.push({id:uid(), q:qk, name:d.name, component:d.component,
+                             location:d.location, lead:d.lead, due:d.due,
+                             pct:pctv, status:st});
+        });
+        rDefs.forEach(function(d){
+          if(n < d.openIdx) return;
+          if(d.closeIdx > -1 && n > d.closeIdx) return;
+          S.risks.push({id:uid(), q:qk, risk:d.risk, mitigation:d.mitigation,
+                        level:d.level, responsible:d.responsible,
+                        status: (d.closeIdx > -1 && n >= d.closeIdx) ? 'Closed' : 'Open'});
+        });
+        lDefs.forEach(function(d){
+          if(d.cells[qk]) S.learning.push({q:qk, field:d.field, text:d.cells[qk]});
+        });
+      });
 
-      /* Open on the quarter marked Current, else the last with data */
-      var cur = S.periods.filter(function(p){ return p.status === 'Current'; })[0];
-      var avail = qWithData();
-      if(cur && avail.some(function(p){ return p.q === cur.q; })) Q = cur.q;
-      else if(avail.length) Q = avail[avail.length-1].q;
-      else if(S.periods.length) Q = S.periods[0].q;
+      counts.kpis       = kDefs.length;
+      counts.outcomes   = oDefs.length;
+      counts.activities = aDefs.length;
+      counts.risks      = rDefs.length;
+      counts.learning   = lDefs.length;
+
+      /* Open on Current when it is in range, else the last reported quarter. */
+      Q = (curIdx > -1 && curIdx <= endIdx) ? QKEYS[curIdx] : QKEYS[endIdx];
 
       renderAll();
       autoSave();
 
       var total = counts.kpis + counts.outcomes + counts.activities +
                   counts.risks + counts.learning;
-      var msg = 'Excel loaded: ' + counts.kpis + ' KPI rows, ' +
-                counts.outcomes + ' outcome rows, ' + counts.activities +
-                ' activity rows, ' + counts.risks + ' risk rows across ' +
-                S.periods.length + ' quarters.';
+      var msg = 'Excel loaded: ' + counts.kpis + ' KPIs, ' + counts.outcomes +
+                ' outcome indicators, ' + counts.activities + ' activities and ' +
+                counts.risks + ' risks across ' + span.length +
+                ' reported quarter' + (span.length === 1 ? '' : 's') + '.';
       if(!isAuto){
         document.getElementById('excel-banner-msg').textContent = msg;
         document.getElementById('excel-banner').classList.add('show');
       }
       window.__parse = {sheets: wb.SheetNames, counts: counts, total: total,
-                        periods: S.periods.length, quarter: Q};
+                        periods: per.length, reported: span, quarter: Q};
       return window.__parse;
 
     }catch(err){
@@ -2482,19 +2654,6 @@ function applyWorkbook(buffer, isAuto){
       if(el){
         var p = el.querySelector('p');
         if(p) p.textContent = empties[id];
-      }
-    });
-
-    var blanks = {
-      'learn-1': 'No key learning recorded for this period.',
-      'learn-2': 'No action items recorded for this period.',
-      'learn-3': 'No data quality notes recorded for this period.'
-    };
-    Object.keys(blanks).forEach(function(id){
-      var el = document.getElementById(id);
-      if(el){
-        el.setAttribute('data-placeholder', blanks[id]);
-        if(!el.textContent.trim()) el.textContent = '';
       }
     });
 
@@ -2580,14 +2739,23 @@ function applyWorkbook(buffer, isAuto){
         if(!res) return;                       /* unchanged, nothing to do */
         var out = applyWorkbook(res.buf, true);
 
+        /* Cause 4b — no Periods sheet, so there are no quarters to show */
+        if(out && out.schema === 'no-periods'){
+          stamp('Not loaded');
+          diag('The <code>Periods</code> sheet is missing or empty',
+            'That sheet defines the reporting quarters and their order, and every other sheet ' +
+            'keys its columns to it. Add it back from the template and the dashboard will load.');
+          return;
+        }
+
         /* Cause 4a — the older, pre-quarter workbook */
         if(out && out.schema === 'legacy'){
           stamp('Old data file');
-          diag('This <code>data.xlsx</code> is the older layout',
-            'The dashboard now reads a Quarter column (column A) on every sheet and a ' +
-            '<code>Periods</code> sheet that lists the reporting quarters. The file in the repo ' +
-            'predates that, so it has not been loaded rather than being read incorrectly. ' +
-            'Commit the quarter-aware template in its place.');
+          diag('This <code>data.xlsx</code> is an older layout',
+            'The dashboard now reads a workbook with one row per item and one column per quarter ' +
+            '(Q1 to Q8), plus a <code>Periods</code> sheet listing the quarters. The file in the ' +
+            'repo predates that, so it has not been loaded rather than being read incorrectly. ' +
+            'Commit the current template in its place.');
           return;
         }
 
