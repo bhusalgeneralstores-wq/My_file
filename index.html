@@ -82,6 +82,8 @@
 .chart-grid .chart-card{margin-bottom:0}
 
 /* ── legend / status keys (icon + label, never colour alone) ── */
+.keys-grid{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:6px 18px}
 .keys{display:flex;flex-wrap:wrap;gap:14px;margin-top:11px;padding-top:10px;
   border-top:1px solid var(--border);font-family:var(--body);font-size:11.5px;color:var(--ink2)}
 .key{display:inline-flex;align-items:center;gap:6px}
@@ -921,7 +923,7 @@ html[data-mode="view"] .view-welcome{
   <div class="chart-card" id="trend-card" style="display:none">
     <div class="chart-h">Delivery progress by quarter</div>
     <div class="chart-sub" id="trend-sub">Mean activity completion across the portfolio</div>
-    <svg class="chart-svg" id="trend-svg" viewBox="0 0 720 200" preserveAspectRatio="xMidYMid meet" role="img"></svg>
+    <svg class="chart-svg" id="trend-svg" viewBox="0 0 720 210" preserveAspectRatio="xMidYMid meet" role="img"></svg>
     <div class="keys" id="trend-keys"></div>
   </div>
 
@@ -1307,11 +1309,28 @@ function barPath(x,y,w,h,r){
          'V'+(y+h)+'Z';
 }
 
+/* Split a label into at most two lines that fit under a column. */
+function wrapLabel(txt, maxChars){
+  var words = String(txt||'').split(/\s+/), lines = [], cur = '';
+  for(var i=0;i<words.length;i++){
+    var t = cur ? cur + ' ' + words[i] : words[i];
+    if(t.length > maxChars && cur){ lines.push(cur); cur = words[i]; }
+    else cur = t;
+    if(lines.length === 1 && i < words.length-1 && cur.length > maxChars){
+      cur = cur.slice(0, Math.max(1,maxChars-1)) + '\u2026';
+      break;
+    }
+  }
+  if(cur) lines.push(cur);
+  if(lines.length > 2) lines = [lines[0], lines[1].slice(0, maxChars-1) + '\u2026'];
+  return lines;
+}
+
 /* Emphasis column chart: selected quarter in the accent hue,
    the rest in the de-emphasis grey. One series, so no legend. */
 function columnChart(data, opts){
   opts = opts || {};
-  var W = 720, H = 200, padL = 38, padR = 14, padT = 14, padB = 34;
+  var W = 720, H = 210, padL = 38, padR = 14, padT = 14, padB = 46;
   var iw = W - padL - padR, ih = H - padT - padB;
   var cap = 0.88;   /* bars stop short of the top so cap labels have room */
   var max = opts.max;
@@ -1339,17 +1358,21 @@ function columnChart(data, opts){
     var h  = (d.v/max)*ih*cap;
     var x  = padL + band*i + (band-bw)/2;
     var y  = padT + ih - h;
-    var fill = d.sel ? 'var(--viz-accent)' : 'var(--viz-dim)';
+    var fill = (d.sel || opts.solid) ? 'var(--viz-accent)' : 'var(--viz-dim)';
     out += '<path d="'+barPath(x,y,bw,h,4)+'" fill="'+fill+'">'+
-           '<title>'+esc(d.label)+': '+d.v+(opts.suffix||'')+'</title></path>';
+           '<title>'+esc(d.full || d.label)+': '+d.v+(opts.suffix||'')+'</title></path>';
     /* value on the cap — selective: only where there is a value to read */
     if(d.v > 0){
       out += '<text class="vlab'+(d.sel?' sel':'')+'" x="'+(x+bw/2).toFixed(1)+'" y="'+(y-6).toFixed(1)+
              '" text-anchor="middle">'+d.v+(opts.suffix||'')+'</text>';
     }
-    out += '<text class="ax" x="'+(padL+band*i+band/2).toFixed(1)+'" y="'+(H-padB+17)+
-           '" text-anchor="middle"'+(d.sel?' style="font-weight:600;fill:var(--ink2)"':'')+'>'+
-           esc(d.label)+'</text>';
+    var cx = (padL+band*i+band/2).toFixed(1);
+    var lines = wrapLabel(d.label, Math.max(8, Math.floor(band/6.2)));
+    out += '<text class="ax" x="'+cx+'" y="'+(H-padB+17)+'" text-anchor="middle"'+
+           (d.sel?' style="font-weight:600;fill:var(--ink2)"':'')+'>' +
+           lines.map(function(t,li){
+             return '<tspan x="'+cx+'" dy="'+(li===0?0:12)+'">'+esc(t)+'</tspan>';
+           }).join('') + '</text>';
   });
 
   /* baseline */
@@ -1526,11 +1549,24 @@ function renderComponentChart(){
     var list = groups[g];
     var mean = list.reduce(function(t,a){ return t + (a.pct||0); }, 0) / list.length;
     var done = list.filter(function(a){ return a.status === 'Completed'; }).length;
-    return {name:g, sub:list.length + ' activit' + (list.length===1?'y':'ies') +
-                        (done ? ' · ' + done + ' completed' : ''),
+    /* Axis label: the part after "Component N ·" when the name has one,
+       so the column sits under a readable name rather than a number. */
+    var axis = g.indexOf('\u00b7') > -1 ? g.split('\u00b7').slice(1).join('\u00b7').trim() : g;
+    return {name:g, axis:axis,
+            sub:list.length + ' activit' + (list.length===1?'y':'ies') +
+                (done ? ', ' + done + ' completed' : ''),
             pct:Math.round(mean), fig:Math.round(mean) + '%'};
   });
-  el.innerHTML = meterRows(data);
+  el.innerHTML = '<svg class="chart-svg" viewBox="0 0 720 210" ' +
+    'preserveAspectRatio="xMidYMid meet" role="img" aria-label="Mean activity completion by component: ' +
+    esc(data.map(function(d){ return d.name + ' ' + d.pct + '%'; }).join(', ')) + '">' +
+    columnChart(data.map(function(d){
+      return {label: d.axis, v: d.pct, sel: false, full: d.name};
+    }), {max:100, suffix:'%', solid:true}) + '</svg>' +
+    '<div class="keys keys-grid">' + data.map(function(d){
+      return '<span class="key">' + esc(d.name) +
+             ' <span style="color:var(--ink4)">\u00b7 ' + esc(d.sub) + '</span></span>';
+    }).join('') + '</div>';
   if(sub) sub.textContent = 'Mean completion of the activities in each component · ' +
                             rows.length + ' activities in this quarter';
 }
