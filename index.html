@@ -15,12 +15,12 @@
 ══════════════════════════════════════════════════════════ */
 :root{
   --viz-accent:#267a4a; --viz-amber:#a85200; --viz-red:#b42020; --viz-blue:#1a3a6e;
-  --viz-dim:#d8d3ca; --viz-grid:rgba(0,0,0,0.09);
+  --viz-dim:#d8d3ca; --viz-grid:rgba(0,0,0,0.09); --viz-track:#e8e3da;
 }
-[data-theme="grey"]{ --viz-dim:#b9b4ab; --viz-grid:rgba(0,0,0,0.12) }
+[data-theme="grey"]{ --viz-dim:#b9b4ab; --viz-grid:rgba(0,0,0,0.12); --viz-track:#c8c3ba }
 [data-theme="dark"]{
   --viz-accent:#6ee494; --viz-amber:#e8a020; --viz-red:#e85050; --viz-blue:#7ab0f0;
-  --viz-dim:#3a3a33; --viz-grid:rgba(255,255,255,0.10);
+  --viz-dim:#3a3a33; --viz-grid:rgba(255,255,255,0.10); --viz-track:#2b2b26;
 }
 
 /* ── quarter selector ── */
@@ -61,6 +61,25 @@
 .ax{font-family:var(--body);font-size:10.5px;fill:var(--ink3)}
 .vlab{font-family:var(--body);font-size:10.5px;font-weight:600;fill:var(--ink2)}
 .vlab.sel{fill:var(--ink)}
+
+/* ── ranked bars / meter list ──
+   One name, one bar, one figure per row; bars share a baseline so the
+   rows compare exactly. Single hue — rank is not identity. */
+.mlist{display:flex;flex-direction:column;gap:11px;margin-top:4px}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) 62px;gap:10px;align-items:center}
+.mname{font-family:var(--body);font-size:12.5px;color:var(--ink2);line-height:1.35;
+  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.mname small{display:block;color:var(--ink4);font-size:11px;margin-top:1px}
+.mtrack{height:10px;background:var(--viz-track);border-radius:5px;margin-top:5px;overflow:hidden}
+.mfill{height:10px;border-radius:0 5px 5px 0;background:var(--viz-accent);min-width:2px}
+.mfill.zero{background:var(--viz-dim)}
+.mfig{font-family:var(--body);font-size:13px;font-weight:600;color:var(--ink);
+  text-align:right;font-variant-numeric:tabular-nums}
+.mfig small{display:block;font-size:10.5px;font-weight:400;color:var(--ink4);
+  margin-top:1px;white-space:nowrap}
+.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));
+  gap:14px;margin-bottom:1.5rem;align-items:start}
+.chart-grid .chart-card{margin-bottom:0}
 
 /* ── legend / status keys (icon + label, never colour alone) ── */
 .keys{display:flex;flex-wrap:wrap;gap:14px;margin-top:11px;padding-top:10px;
@@ -884,6 +903,20 @@ html[data-mode="view"] .view-welcome{
   <!-- ── QUARTER SUMMARY TILES ── -->
   <div class="tiles" id="tiles"></div>
 
+  <!-- ── SINGLE-QUARTER CHARTS ── -->
+  <div class="chart-grid">
+    <div class="chart-card" id="kpichart-card" style="display:none">
+      <div class="chart-h">KPI achievement against target</div>
+      <div class="chart-sub">Share of each target reached, highest first</div>
+      <div class="mlist" id="kpichart"></div>
+    </div>
+    <div class="chart-card" id="compchart-card" style="display:none">
+      <div class="chart-h">Activity progress by component</div>
+      <div class="chart-sub" id="compchart-sub">Mean completion of the activities in each component</div>
+      <div class="mlist" id="compchart"></div>
+    </div>
+  </div>
+
   <!-- ── PORTFOLIO TREND ── -->
   <div class="chart-card" id="trend-card" style="display:none">
     <div class="chart-h">Delivery progress by quarter</div>
@@ -1423,6 +1456,85 @@ function renderTiles(){
            : '<div class="tile-sub d-flat"><i class="ti ti-shield-check"></i>No high risks</div>');
 }
 
+/* ─── RANKED BARS / METER LIST ───────────────────────────
+   Rows share a baseline, one hue. Every bar is labelled with
+   its figure, so the chart is readable without colour.      */
+function meterRows(rows){
+  return rows.map(function(r){
+    var w = Math.max(0, Math.min(100, r.pct));
+    return '<div class="mrow">' +
+      '<div><div class="mname">'+esc(r.name)+
+        (r.sub ? '<small>'+esc(r.sub)+'</small>' : '')+'</div>' +
+        '<div class="mtrack"><div class="mfill'+(w<=0?' zero':'')+
+          '" style="width:'+w.toFixed(1)+'%"></div></div></div>' +
+      '<div class="mfig">'+r.fig+(r.figsub?'<small>'+esc(r.figsub)+'</small>':'')+'</div>' +
+    '</div>';
+  }).join('');
+}
+
+/* ─── KPI ACHIEVEMENT ────────────────────────────────────── */
+function renderKpiChart(){
+  var card = document.getElementById('kpichart-card');
+  var el   = document.getElementById('kpichart');
+  if(!card || !el) return;
+  var rows = inQ(S.kpis);
+  if(rows.length < 2){ card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  var data = rows.map(function(k){
+    return {name: k.label,
+            sub:  numFmt(k.value) + ' of ' + numFmt(k.target) + (k.unit ? ' ' + k.unit : ''),
+            pct:  pct(k.value, k.target),
+            raw:  k.target > 0 ? (k.value / k.target) * 100 : 0};
+  }).sort(function(a,b){ return b.raw - a.raw; });
+
+  el.innerHTML = meterRows(data.map(function(d){
+    return {name:d.name, sub:d.sub, pct:d.pct,
+            fig: Math.round(d.raw) + '%',
+            figsub: d.raw > 100 ? 'over target' : ''};
+  }));
+}
+
+/* ─── ACTIVITY PROGRESS BY COMPONENT ─────────────────────
+   Grouped on the numbering the activity names already carry
+   (1.1, 2.3 …), or on the Component column when one is set. */
+function componentOf(a){
+  if(a.component) return a.component;
+  var m = String(a.name || '').match(/^\s*(\d+)\s*[.\)]/);
+  return m ? 'Component ' + m[1] : 'Ungrouped';
+}
+function renderComponentChart(){
+  var card = document.getElementById('compchart-card');
+  var el   = document.getElementById('compchart');
+  var sub  = document.getElementById('compchart-sub');
+  if(!card || !el) return;
+  var rows = inQ(S.activities);
+  if(!rows.length){ card.style.display = 'none'; return; }
+
+  var groups = {}, order = [];
+  rows.forEach(function(a){
+    var g = componentOf(a);
+    if(!groups[g]){ groups[g] = []; order.push(g); }
+    groups[g].push(a);
+  });
+  /* Only worth a chart when the activities actually split into groups */
+  if(order.length < 2){ card.style.display = 'none'; return; }
+  card.style.display = '';
+  order.sort();
+
+  var data = order.map(function(g){
+    var list = groups[g];
+    var mean = list.reduce(function(t,a){ return t + (a.pct||0); }, 0) / list.length;
+    var done = list.filter(function(a){ return a.status === 'Completed'; }).length;
+    return {name:g, sub:list.length + ' activit' + (list.length===1?'y':'ies') +
+                        (done ? ' · ' + done + ' completed' : ''),
+            pct:Math.round(mean), fig:Math.round(mean) + '%'};
+  });
+  el.innerHTML = meterRows(data);
+  if(sub) sub.textContent = 'Mean completion of the activities in each component · ' +
+                            rows.length + ' activities in this quarter';
+}
+
 /* ─── PORTFOLIO TREND ────────────────────────────────────── */
 function renderTrend(){
   var card = document.getElementById('trend-card');
@@ -1901,6 +2013,8 @@ function renderLearning(){
 function renderAll(){
   renderQuarterBar();
   renderTiles();
+  renderKpiChart();
+  renderComponentChart();
   renderTrend();
   renderKpis();
   renderOutcomes();
@@ -1929,6 +2043,9 @@ var _saveTimer  = null;
 
 /* Show a small "Saved" toast */
 function showSaved(){
+  /* The toast means "your edit was stored locally" — meaningless in the
+     read-only view, where the workbook is the source of truth. */
+  if(document.documentElement.getAttribute('data-mode') === 'view') return;
   var t = document.getElementById('save-toast');
   if(!t) return;
   t.classList.add('show');
@@ -2210,7 +2327,8 @@ function applyWorkbook(buffer, isAuto){
           if(!str(r[0]) || !str(r[1])) continue;
           a.push({id:uid(), q:str(r[0]), name:str(r[1]), location:str(r[2]), lead:str(r[3]),
                   pct:Math.min(100, Math.max(0, num(r[4]))), due:date(r[5]),
-                  status:pick(r[6], ['Not Started','In Progress','Completed','Delayed'], 'In Progress')});
+                  status:pick(r[6], ['Not Started','In Progress','Completed','Delayed'], 'In Progress'),
+                  component:str(r[7])});
         }
         if(a.length){ S.activities = a; counts.activities = a.length; }
       }
