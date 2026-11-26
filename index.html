@@ -1630,9 +1630,13 @@ function renderOutcomes(){
     var p   = pct(o.current, o.target);
     var col = progColor(p);
     var unit = o.unit ? ' ' + esc(o.unit) : '';
+    /* Outcome area is optional — when it is blank the indicator becomes
+       the main line rather than leaving an empty heading above it. */
+    var head = o.area ? esc(o.area) : esc(o.indicator);
+    var sub  = o.area ? esc(o.indicator) : '';
     return '<tr>' +
-      '<td><span class="ot-area">'+esc(o.area)+'</span>' +
-           '<span class="ot-ind">'+esc(o.indicator)+'</span></td>' +
+      '<td><span class="ot-area">'+head+'</span>' +
+           (sub ? '<span class="ot-ind">'+sub+'</span>' : '') + '</td>' +
       '<td class="tc">'+o.baseline+unit+'</td>' +
       '<td class="tc"><span class="ot-num">'+o.current+unit+'</span></td>' +
       '<td class="tc">'+o.target+unit+'</td>' +
