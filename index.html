@@ -62,6 +62,23 @@
 .vlab{font-family:var(--body);font-size:10.5px;font-weight:600;fill:var(--ink2)}
 .vlab.sel{fill:var(--ink)}
 
+/* ── risk table ── */
+.rt td{vertical-align:top}
+.rt-ref{display:inline-block;font-family:var(--body);font-size:11.5px;font-weight:600;
+  color:var(--accent);background:var(--accent-lt);border-radius:5px;padding:3px 8px;
+  white-space:nowrap;cursor:default}
+.rt-ref.rt-none{color:var(--ink4);background:var(--surface2,rgba(0,0,0,0.05));font-weight:500}
+.rt-risk{display:block;font-size:12.5px;font-weight:600;color:var(--ink);line-height:1.45}
+.rt-mit{display:block;font-size:12px;color:var(--ink2);line-height:1.5}
+.rt-mit.rt-blank{color:var(--ink4);font-style:italic}
+.rt-resp{font-size:12px;color:var(--ink2)}
+.rt .risk-lvl{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.rt .risk-lvl i{font-size:12px}
+.rt-closed{opacity:.58}
+@media(max-width:720px){
+  .rt-risk,.rt-mit{font-size:11.5px}
+}
+
 /* ── ranked bars / meter list ──
    One name, one bar, one figure per row; bars share a baseline so the
    rows compare exactly. Single hue — rank is not identity. */
@@ -943,14 +960,14 @@ html[data-mode="view"] .view-welcome{
 
   <!-- ── COMPONENT PROGRESS, EVERY QUARTER ── -->
   <div class="chart-card" id="compstrip-card" style="display:none">
-    <div class="chart-h">Component progress, quarter by quarter</div>
-    <div class="chart-sub">Each component on the same 0–100% scale · the selected quarter is highlighted</div>
+    <div class="chart-h">Component progress, period by period</div>
+    <div class="chart-sub">Each component on the same 0–100% scale · the selected period is highlighted</div>
     <div class="cstrip-grid" id="compstrip"></div>
   </div>
 
   <!-- ── PORTFOLIO TREND ── -->
   <div class="chart-card" id="trend-card" style="display:none">
-    <div class="chart-h">Delivery progress by quarter</div>
+    <div class="chart-h">Delivery progress by period</div>
     <div class="chart-sub" id="trend-sub">Mean activity completion across the portfolio</div>
     <svg class="chart-svg" id="trend-svg" viewBox="0 0 720 210" preserveAspectRatio="xMidYMid meet" role="img"></svg>
     <div class="keys" id="trend-keys"></div>
@@ -1013,11 +1030,9 @@ html[data-mode="view"] .view-welcome{
     </div>
   </div>
 
-  <!-- ── ACTIVITIES + RISKS ── -->
-  <div class="two-col">
+  <!-- ── ACTIVITIES ── -->
 
-    <!-- Activities -->
-    <div class="sec" style="margin-bottom:0">
+  <div class="sec">
       <div class="sec-head">
         <div class="sec-head-left">
           <div class="sec-htitle">Activity Progress</div>
@@ -1039,10 +1054,10 @@ html[data-mode="view"] .view-welcome{
           <i class="ti ti-plus"></i> Add another activity
         </button>
       </div>
-    </div>
+  </div>
 
-    <!-- Risks -->
-    <div class="sec" style="margin-bottom:0">
+  <!-- ── RISK TRACKER ── -->
+  <div class="sec">
       <div class="sec-head">
         <div class="sec-head-left">
           <div class="sec-htitle">Risk Tracker</div>
@@ -1059,14 +1074,28 @@ html[data-mode="view"] .view-welcome{
           <span onclick="openRisk()">Log your first risk</span>.</p>
         </div>
         <div id="risk-summary"></div>
-      <div id="risks-list"></div>
+      <div id="risks-wrap" class="ot-wrap" style="display:none">
+        <table class="ot rt">
+          <thead>
+            <tr>
+              <th style="width:86px">Activity</th>
+              <th style="min-width:230px">Risk</th>
+              <th style="min-width:250px">Mitigation / Action</th>
+              <th class="tc" style="width:92px">Level</th>
+              <th style="width:150px">Responsible</th>
+              <th style="width:54px"></th>
+            </tr>
+          </thead>
+          <tbody id="risks-body"></tbody>
+        </table>
+      </div>
         <button class="btn-add-ghost" onclick="openRisk()" id="risk-add-more" style="display:none">
           <i class="ti ti-plus"></i> Add another risk
         </button>
       </div>
     </div>
 
-  </div><!-- /two-col -->
+
 
   <!-- ── LEARNING ── -->
   <div class="sec">
@@ -1442,7 +1471,7 @@ function keyList(parts){
 
 /* ─── QUARTER BAR ────────────────────────────────────────── */
 var Q_STATUS = {
-  'Completed': {icon:'ti-circle-check', word:'completed'},
+  'Completed': {icon:'ti-circle-check', word:'reported'},
   'Current':   {icon:'ti-player-play',  word:'in progress'},
   'Upcoming':  {icon:'ti-minus',        word:'upcoming'}
 };
@@ -1603,7 +1632,7 @@ function renderComponentChart(){
              ' <span style="color:var(--ink4)">\u00b7 ' + esc(d.sub) + '</span></span>';
     }).join('') + '</div>';
   if(sub) sub.textContent = 'Mean completion of the activities in each component · ' +
-                            rows.length + ' activities in this quarter';
+                            rows.length + ' activities in this period';
   renderComponentStrip(order, groups);
 }
 
@@ -1670,13 +1699,13 @@ function renderTrend(){
   });
   svg.innerHTML = columnChart(data, {max:100, suffix:'%'});
   svg.setAttribute('aria-label',
-    'Mean activity completion by quarter: ' +
+    'Mean activity completion by period: ' +
     data.map(function(d){ return d.label+' '+d.v+'%'; }).join(', '));
   if(keys){
     keys.innerHTML =
       '<span class="key"><span class="sw" style="background:var(--viz-accent)"></span>Selected quarter</span>' +
       '<span class="key"><span class="sw" style="background:var(--viz-dim)"></span>Other quarters</span>' +
-      '<span class="key" style="color:var(--ink3)">Each bar is the mean completion of the activities reported in that quarter.</span>';
+      '<span class="key" style="color:var(--ink3)">Each bar is the mean completion of the activities reported in that period.</span>';
   }
 }
 
@@ -1941,7 +1970,7 @@ function etaChip(a){
            fmtDate(a.due)+'</span>';
   var per = qCur();
   if(per && per.end && a.due <= per.end)
-    return '<span class="act-eta eta-soon"><i class="ti ti-clock"></i>Due this quarter · '+
+    return '<span class="act-eta eta-soon"><i class="ti ti-clock"></i>Due this period · '+
            fmtDate(a.due)+'</span>';
   return '<span class="act-eta eta-ok"><i class="ti ti-calendar"></i>Due '+fmtDate(a.due)+'</span>';
 }
@@ -2056,19 +2085,22 @@ var RISK_PARTS = [
 
 function renderRisks(){
   var empty   = document.getElementById('risks-empty');
-  var list    = document.getElementById('risks-list');
+  var wrap    = document.getElementById('risks-wrap');
+  var body    = document.getElementById('risks-body');
   var addMore = document.getElementById('risk-add-more');
   var summary = document.getElementById('risk-summary');
   var rows    = inQ(S.risks);
 
   if(!rows.length){
     empty.style.display   = '';
-    list.innerHTML        = '';
+    wrap.style.display    = 'none';
+    body.innerHTML        = '';
     if(summary) summary.innerHTML = '';
     addMore.style.display = 'none';
     return;
   }
   empty.style.display   = 'none';
+  wrap.style.display    = '';
   addMore.style.display = '';
 
   if(summary){
@@ -2081,33 +2113,45 @@ function renderRisks(){
     summary.innerHTML = segBar(parts) + keyList(parts) +
       (closed ? '<div style="font-family:var(--body);font-size:11.5px;color:var(--ink3);margin-top:7px">'+
                 '<i class="ti ti-circle-check" style="font-size:12px"></i> '+closed+
-                ' closed this quarter</div>' : '');
+                ' closed this period</div>' : '');
   }
 
-  list.innerHTML = rows.map(function(r){
+  /* Activity names, keyed by the reference that starts them (1.1, 2.3 …),
+     so a risk's activity cell can show what it is pointing at. */
+  var byRef = {};
+  S.activities.forEach(function(a){
+    var m = String(a.name||'').match(/^\s*([0-9]+(?:\.[0-9]+)?)/);
+    if(m && !byRef[m[1]]) byRef[m[1]] = String(a.name).replace(/^\s*[0-9.]+\s*/, '');
+  });
+
+  body.innerHTML = rows.map(function(r){
     var lc     = (r.level||'Medium').toLowerCase();
     var closed = r.status === 'Closed';
-    return '<div class="risk-card"'+(closed?' style="opacity:.6"':'')+'>' +
-      '<div class="risk-dot rd-'+lc+'"></div>' +
-      '<div class="risk-body">' +
-        '<div class="risk-title">'+esc(r.risk)+
-          (closed?' <span class="act-eta eta-done" style="margin-left:6px">'+
-                  '<i class="ti ti-circle-check"></i>Closed</span>':'')+'</div>' +
-        (r.mitigation
-          ? '<div class="risk-mit"><strong>Mitigation:</strong> '+esc(r.mitigation)+'</div>'
-          : '') +
-        (r.responsible
-          ? '<div class="risk-mit" style="margin-top:3px"><strong>Responsible:</strong> '+esc(r.responsible)+'</div>'
-          : '') +
-      '</div>' +
-      '<div class="risk-right">' +
-        '<span class="risk-lvl rl-'+lc+'">'+esc(r.level||'Medium')+'</span>' +
-        '<span class="row-acts" style="flex-direction:column">' +
-          '<button class="r-ic" onclick="openRisk(\''+r.id+'\')" title="Edit"><i class="ti ti-pencil"></i></button>' +
-          '<button class="r-ic del" onclick="deleteRisk(\''+r.id+'\')" title="Delete"><i class="ti ti-trash"></i></button>' +
-        '</span>' +
-      '</div>' +
-    '</div>';
+    var ref    = (r.activity || '').trim();
+    var refCell;
+    if(ref){
+      var full = byRef[ref];
+      refCell = '<span class="rt-ref"'+(full ? ' title="'+esc(full)+'"' : '')+'>'+esc(ref)+'</span>';
+    } else {
+      refCell = '<span class="rt-ref rt-none" title="Not tied to a single activity">Programme</span>';
+    }
+    return '<tr'+(closed?' class="rt-closed"':'')+'>' +
+      '<td class="tc">'+refCell+'</td>' +
+      '<td><span class="rt-risk">'+esc(r.risk)+'</span>' +
+        (closed ? '<span class="act-eta eta-done" style="margin-top:4px">' +
+                  '<i class="ti ti-circle-check"></i>Closed</span>' : '') + '</td>' +
+      '<td>'+(r.mitigation
+        ? '<span class="rt-mit">'+esc(r.mitigation)+'</span>'
+        : '<span class="rt-mit rt-blank">Not recorded</span>')+'</td>' +
+      '<td class="tc"><span class="risk-lvl rl-'+lc+'">' +
+        '<i class="ti '+(lc==='high'?'ti-alert-triangle':(lc==='medium'?'ti-alert-circle':'ti-shield-check'))+
+        '"></i> '+esc(r.level||'Medium')+'</span></td>' +
+      '<td><span class="rt-resp">'+(r.responsible ? esc(r.responsible) : '—')+'</span></td>' +
+      '<td class="tc"><span class="row-acts">' +
+        '<button class="r-ic" onclick="openRisk(\''+r.id+'\')" title="Edit"><i class="ti ti-pencil"></i></button>' +
+        '<button class="r-ic del" onclick="deleteRisk(\''+r.id+'\')" title="Delete"><i class="ti ti-trash"></i></button>' +
+      '</span></td>' +
+    '</tr>';
   }).join('');
 }
 
@@ -2385,8 +2429,9 @@ function applyWorkbook(buffer, isAuto){
       }
 
       /* Reject the pre-wide layout rather than misreading it. */
-      var kh = rowsOf('KPIs');
-      if(kh && kh[2] && String(kh[2][0]||'').trim().toLowerCase() !== 'kpi'){
+      var kh = rowsOf('KPIs'), rh = rowsOf('Risks');
+      var oldRisks = rh && rh[2] && String(rh[2][0]||'').trim().toLowerCase() === 'risk';
+      if((kh && kh[2] && String(kh[2][0]||'').trim().toLowerCase() !== 'kpi') || oldRisks){
         window.__parse = {schema:'legacy', sheets: wb.SheetNames, total:0};
         if(isAuto) return window.__parse;
         alert('This data.xlsx uses an older layout. Use the current template, which has one ' +
@@ -2511,14 +2556,14 @@ function applyWorkbook(buffer, isAuto){
       if(rawR){
         for(var i=3;i<rawR.length;i++){
           var r = rawR[i] || [];
-          if(!str(r[0])) continue;
-          var op = str(r[4]), cl = str(r[5]);
+          if(!str(r[1])) continue;
+          var op = str(r[5]), cl = str(r[6]);
           var oi = QIDX[op] === undefined ? 0 : QIDX[op];
           var ci = QIDX[cl] === undefined ? -1 : QIDX[cl];
           if(oi > lastIdx) lastIdx = oi;
-          rDefs.push({risk:str(r[0]), mitigation:str(r[1]),
-                      level:pick(r[2], ['High','Medium','Low'], 'Medium'),
-                      responsible:str(r[3]), openIdx:oi, closeIdx:ci});
+          rDefs.push({activity:str(r[0]), risk:str(r[1]), mitigation:str(r[2]),
+                      level:pick(r[3], ['High','Medium','Low'], 'Medium'),
+                      responsible:str(r[4]), openIdx:oi, closeIdx:ci});
         }
       }
       if(rawL && rawL[2]){
@@ -2571,7 +2616,8 @@ function applyWorkbook(buffer, isAuto){
         rDefs.forEach(function(d){
           if(n < d.openIdx) return;
           if(d.closeIdx > -1 && n > d.closeIdx) return;
-          S.risks.push({id:uid(), q:qk, risk:d.risk, mitigation:d.mitigation,
+          S.risks.push({id:uid(), q:qk, activity:d.activity, risk:d.risk,
+                        mitigation:d.mitigation,
                         level:d.level, responsible:d.responsible,
                         status: (d.closeIdx > -1 && n >= d.closeIdx) ? 'Closed' : 'Open'});
         });
