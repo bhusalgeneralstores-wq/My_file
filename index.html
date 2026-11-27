@@ -616,7 +616,7 @@ tr:hover .row-acts,
 /* ══════════════════════════════════════
    LEARNING
 ══════════════════════════════════════ */
-.learn-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.learn-grid{display:grid;grid-template-columns:1fr;gap:10px}
 @media(max-width:700px){.learn-grid{grid-template-columns:1fr}}
 .learn-card{
   background:var(--surface);
@@ -1125,70 +1125,7 @@ html[data-mode="view"] .view-welcome{
           <div class="learn-ttl">Key Learning</div>
           <div contenteditable="true" id="learn-1" data-placeholder="Click to add key learning from this period...">Click to add key learning from this period...</div>
         </div>
-        <div class="learn-card">
-          <i class="learn-icon ti ti-alert-circle" style="color:var(--red2)"></i>
-          <div class="learn-ttl">Action Required</div>
-          <div contenteditable="true" id="learn-2" data-placeholder="Click to add action items...">Click to add action items...</div>
-        </div>
-        <div class="learn-card">
-          <i class="learn-icon ti ti-shield-check" style="color:var(--accent2)"></i>
-          <div class="learn-ttl">Data Quality Notes</div>
-          <div contenteditable="true" id="learn-3" data-placeholder="Click to add data quality notes...">Click to add data quality notes...</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── MEAL FRAMEWORK ── -->
-  <div class="sec">
-    <div class="sec-head">
-      <div class="sec-head-left">
-        <div class="sec-htitle">MEAL Framework Components</div>
-        <div class="sec-hsub">Core reporting dimensions for program management and donor accountability</div>
-      </div>
-    </div>
-    <div class="sec-body">
-      <div class="meal-grid">
-        <div class="meal-col">
-          <div class="meal-letter">M</div>
-          <div class="meal-word">Monitoring</div>
-          <ul class="meal-ul">
-            <li>Indicator tracking</li>
-            <li>Field activity monitoring</li>
-            <li>Quarterly data collection</li>
-            <li>Real-time dashboards</li>
-          </ul>
-        </div>
-        <div class="meal-col">
-          <div class="meal-letter">E</div>
-          <div class="meal-word">Evaluation</div>
-          <ul class="meal-ul">
-            <li>Baseline &amp; endline studies</li>
-            <li>Impact assessments</li>
-            <li>Performance reviews</li>
-            <li>Value for money analysis</li>
-          </ul>
-        </div>
-        <div class="meal-col">
-          <div class="meal-letter">A</div>
-          <div class="meal-word">Accountability</div>
-          <ul class="meal-ul">
-            <li>Stakeholder feedback</li>
-            <li>Grievance redressal</li>
-            <li>Transparency reporting</li>
-            <li>PSHEA compliance</li>
-          </ul>
-        </div>
-        <div class="meal-col">
-          <div class="meal-letter">L</div>
-          <div class="meal-word">Learning</div>
-          <ul class="meal-ul">
-            <li>Knowledge management</li>
-            <li>Peer learning events</li>
-            <li>Adaptive management</li>
-            <li>Lessons documentation</li>
-          </ul>
-        </div>
+        
       </div>
     </div>
   </div>
@@ -1223,11 +1160,12 @@ function pct(cur, tgt){
   return Math.min(100, Math.round((cur / tgt) * 100));
 }
 
+/* Progress bands. The bar colour follows the figure on its own:
+   under 25% red, 25-74% orange, 75% and over green. */
 function progColor(p){
-  /* One hue for every progress meter. Severity is carried by the Status
-     field the user sets, not inferred from a raw percentage — a 67%
-     indicator at mid-programme is not a warning. */
-  return 'var(--viz-accent)';
+  if(p >= 75) return 'var(--viz-accent)';
+  if(p >= 25) return 'var(--viz-amber)';
+  return 'var(--viz-red)';
 }
 
 function statusBadge(s){
@@ -1969,9 +1907,15 @@ function deleteActivity(id){
    the quarter being reported (not against today's date). */
 function isOverdue(a){
   if(!a.due || a.status === 'Completed') return false;
-  var per = qCur() || S.periods[qIndex(a.q)];
-  var ref = (per && per.end) ? per.end : new Date();
-  return a.due < ref;
+  return a.due < overdueRef(S.periods[qIndex(a.q)]);
+}
+/* A finished period is judged against the date it ended; a period still
+   running is judged against today, so a target later this period is not
+   reported as missed before the date arrives. */
+function overdueRef(per){
+  var today = new Date(); today.setHours(0,0,0,0);
+  if(per && per.end && per.end < today) return per.end;
+  return today;
 }
 function etaChip(a){
   if(a.status === 'Completed')
@@ -2171,12 +2115,8 @@ function renderRisks(){
 }
 
 /* ─── LEARNING (per quarter) ─────────────────────────────── */
-var LEARN_MAP = {'Key Learning':'learn-1','Action Required':'learn-2','Data Quality Notes':'learn-3'};
-var LEARN_EMPTY = {
-  'Key Learning':      'No key learning recorded for this period.',
-  'Action Required':   'No action items recorded for this period.',
-  'Data Quality Notes':'No data quality notes recorded for this period.'
-};
+var LEARN_MAP = {'Key Learning':'learn-1'};
+var LEARN_EMPTY = { 'Key Learning': 'No key learning recorded for this period.' };
 function renderLearning(){
   var rows = inQ(S.learning);
   var viewing = document.documentElement.getAttribute('data-mode') === 'view';
@@ -2239,7 +2179,7 @@ function showSaved(){
 /* Persist entire state + UI strings */
 function saveAll(){
   try{
-    var learn = ['learn-1','learn-2','learn-3'].map(function(id){
+    var learn = ['learn-1'].map(function(id){
       var el = document.getElementById(id);
       var ph = el ? el.getAttribute('data-placeholder') : '';
       var v  = el ? el.textContent.trim() : '';
@@ -2292,7 +2232,7 @@ function loadAll(){
 
     /* Restore learning text */
     if(data.learn){
-      ['learn-1','learn-2','learn-3'].forEach(function(id, i){
+      ['learn-1'].forEach(function(id, i){
         var el = document.getElementById(id);
         if(!el) return;
         var ph = el.getAttribute('data-placeholder');
@@ -2315,10 +2255,11 @@ function loadAll(){
 function clearAllData(){
   if(!confirm('This will permanently delete all your dashboard data. Are you sure?')) return;
   try{ localStorage.removeItem(STORAGE_KEY); }catch(e){}
-  S = { kpis:[], outcomes:[], activities:[], risks:[] };
-  renderKpis(); renderOutcomes(); renderActivities(); renderRisks();
+  S = { kpis:[], outcomes:[], activities:[], risks:[], learning:[], periods:[] };
+  Q = null;
+  renderAll();
   /* reset learning */
-  ['learn-1','learn-2','learn-3'].forEach(function(id){
+  ['learn-1'].forEach(function(id){
     var el = document.getElementById(id);
     if(el) el.textContent = el.getAttribute('data-placeholder');
   });
@@ -2376,7 +2317,7 @@ if(!Q && S.periods.length){
 renderAll();
 
 /* ─── LEARNING: placeholder + auto-save on blur ─────────── */
-['learn-1','learn-2','learn-3'].forEach(function(id){
+['learn-1'].forEach(function(id){
   var el = document.getElementById(id);
   if(!el) return;
   var ph = el.getAttribute('data-placeholder');
@@ -2588,8 +2529,9 @@ function applyWorkbook(buffer, isAuto){
           if(!str(r[0])) continue;
           var cells = cellsOf(r, cm, false);
           noteFilled(cells);
-          lDefs.push({field:pick(r[0], ['Key Learning','Action Required','Data Quality Notes'],
-                                 str(r[0])), cells:cells});
+          var fld = pick(r[0], ['Key Learning'], '');
+          if(!fld) continue;                /* only Key Learning is shown */
+          lDefs.push({field:fld, cells:cells});
         }
       }
 
@@ -2623,7 +2565,7 @@ function applyWorkbook(buffer, isAuto){
           if(pctv >= 100) st = 'Completed';
           else if(pctv <= 0) st = 'Not Started';
           else st = 'In Progress';
-          if(st !== 'Completed' && d.due && per[n].end && d.due < per[n].end) st = 'Delayed';
+          if(st !== 'Completed' && d.due && d.due < overdueRef(per[n])) st = 'Delayed';
           S.activities.push({id:uid(), q:qk, name:d.name, component:d.component,
                              location:d.location, lead:d.lead, due:d.due,
                              pct:pctv, status:st});
